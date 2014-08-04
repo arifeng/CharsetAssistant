@@ -1,6 +1,6 @@
 //{{NO_DEPENDENCIES}}
 // Microsoft Developer Studio generated include file.
-// Used by AriCharset.rc
+// Used by CharsetAssistant.rc
 //
 #define IDC_BT_CLEAR                    2
 #define IDD_ARICHARSET_DIALOG           102

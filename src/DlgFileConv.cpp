@@ -118,6 +118,8 @@ static int convert_line(char *line, size_t len, size_t nline, void *arg)
 	size_t outlen = 1024;
 	int ret;
 
+	//文件内容转换使用兼容模式
+	//TODO:在界面上选择是否使用兼容模式
 	ret = convert_to_charset(pInfo->src_charset.c_str(), pInfo->dst_charset.c_str(),
 						line, len, &outbuf, &outlen, 0);
 
@@ -169,7 +171,17 @@ void CDlgFileConv::ConvThreadProc()
 			continue;
 		}
 
-		//写入BOM头
+		//忽略源文件的BOM头
+		char bom_charset[MAX_CHARSET];
+		if (read_file_bom(fps, bom_charset, MAX_CHARSET)) {
+			//如果存在BOM头但是其所代表的字符集与用户选择的字符集不一致
+			if (strcasecmp(bom_charset, m_convFileInfo.src_charset.c_str())) {
+				//TODO:提醒用户
+				m_convFileInfo.src_charset = bom_charset;
+			}
+		}
+
+		//写入目标文件的BOM头
 		if (m_bWriteBOM)
 			write_file_bom(fp, m_convFileInfo.dst_charset.c_str());
 

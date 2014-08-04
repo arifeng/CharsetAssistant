@@ -41,6 +41,9 @@ CAriCharsetApp theApp;
 
 BOOL CAriCharsetApp::InitInstance()
 {
+	cutil_init();
+	set_product_name("Charset Assistant");
+
 	AfxEnableControlContainer();
 
 	// Standard initialization
@@ -73,4 +76,11 @@ BOOL CAriCharsetApp::InitInstance()
 	// Since the dialog has been closed, return FALSE so that we exit the
 	//  application, rather than start the application's message pump.
 	return FALSE;
+}
+
+int CAriCharsetApp::ExitInstance()
+{
+	cutil_exit();
+
+	return CWinApp::ExitInstance();
 }

@@ -29,6 +29,7 @@ public:
 	//{{AFX_VIRTUAL(CAriCharsetApp)
 	public:
 	virtual BOOL InitInstance();
+	virtual int ExitInstance();
 	//}}AFX_VIRTUAL
 
 // Implementation

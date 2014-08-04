@@ -110,7 +110,7 @@ BOOL CDlgLookup::OnInitDialog()
 	m_tooltip.AddTool(GetDlgItem(IDC_RDO_CS_QUWEI), _T("汉字区位码"));
 
 	m_tooltip.AddTool(GetDlgItem(IDC_RDO_CS_UTF8), _T("UTF-8是UNICODE的一种变长字符编码，又称万国码，\n用1~6个字节表示一个字符（汉字占3个字节）。\nWindows对应代码页：CP65001。"));
-	m_tooltip.AddTool(GetDlgItem(IDC_RDO_CS_UTF16LE), _T("UTF-16可看成是UCS-2的父集，在没有辅助平面前UTF-16就等于UCS-2，\n每个字符占2个字节；在windows下被称作“Unicode编码”"));
+	m_tooltip.AddTool(GetDlgItem(IDC_RDO_CS_UTF16LE), _T("在windows下被称作“Unicode编码”，每个字符占2个字节。\nUTF-16可看成是UCS-2的父集，在没有辅助平面前UTF-16就等于UCS-2"));
 	m_tooltip.AddTool(GetDlgItem(IDC_RDO_CS_UTF16BE), _T("UTF-16的大端表示法"));
 	m_tooltip.AddTool(GetDlgItem(IDC_RDO_CS_UTF32LE), _T("UTF-32 LE仅使用了unicode范围(0到0x10FFFF)的32位编码, 因占空间大(每字符4个字节)较少被使用"));
 	m_tooltip.AddTool(GetDlgItem(IDC_RDO_CS_UTF32BE), _T("UTF-32的大端表示法，类似UTF-32LE"));
@@ -129,7 +129,7 @@ void CDlgLookup::OnOK()
 	std::string from_cs, to_cs;
 	const char *inbuf;
 	char outbuf[OUTBUF];
-	int inlen, outlen;
+	size_t inlen, outlen;
 	bool bWarned = false;
 
 	if (m_strCharset.IsEmpty())
@@ -146,7 +146,7 @@ void CDlgLookup::OnOK()
 	if (strTo == "SECTPOS")
 		to_cs = "GB2312";						//区码码对应汉字内码
 
-	//strInput中存放着Unicode (UTF-16BE)格式编码的字符串
+	//strInput中存放着Unicode (UTF-16LE)格式编码的字符串
 	GetDlgItemText(IDC_REDT_INPUT, m_strInput);
 
 	//对每个Unicode字符进行转换
@@ -168,7 +168,8 @@ void CDlgLookup::OnOK()
 		inlen = sizeof(wch);
 		outlen = OUTBUF;
 
-		if (inbuf[0] == '\r' || inbuf[0] == '\n')			//回车换行符
+		//回车换行符
+		if (inbuf[0] == '\r' || inbuf[0] == '\n')
 		{
 			strOutput += wch;
 			pos += 1;
@@ -180,93 +181,94 @@ void CDlgLookup::OnOK()
 		//五笔字型编码查询
 		if (strTo == _T("WUBI"))
 		{
-			std::string res = CWubiCode::Find(CStringTowstring(wch));
-			if (res.empty() || res.length() > 4)
-			{
-				strOutput += wch;
-				pos += 1;
-				continue;
-			}
-			else
+			std::string res = CWubiCode::Find(std::wstring(1, wch));
+			if (!res.empty() && res.length() <= 4)
 			{
 				memset(outbuf, 0, OUTBUF);
 				strncpy(outbuf, res.c_str(), res.length());
 				outlen = res.length();
+				strCode = outbuf;
 			}
-		}
-		//其他编码使用ICONV进行转换，并将目标字符串长度赋值给outlen
-		else if (!convert_to_charset(from_cs.c_str(), to_cs.c_str(), inbuf, inlen, (char**)&outbuf, (uint*)&outlen, 0))
-		{
-			if (!bWarned)
+			else
 			{
-				if (errno == E2BIG)
-					AfxMessageBox(_T("目标缓冲区太小无法保存转换后的字符"));
-				else if (errno == EILSEQ)
-					AfxMessageBox(_T("待转换内容包含目标编码无法识别的字符"));
-				if (errno == EINVAL)
-					AfxMessageBox(_T("不完全的待转换内容序列"));
-
-				bWarned = true;
+				strOutput += wch;
+				pos += wch > CHAR_MAX ? 2 : 1;
+				continue;
 			}
-			strOutput += wch;
-			pos += 2;
-			continue;
 		}
-
 		//汉字区位码
-		if (strTo == _T("SECTPOS"))
+		else if (strTo == _T("SECTPOS"))
 		{
-			if (wch > 127)
+			//区位码是基于GBK编码的，需先转换为GBK编码
+			char*p = outbuf;
+			if (wch > 127 && convert_to_charset(from_cs.c_str(), "GBK", inbuf, inlen, &p, &outlen, 1))
 			{
 				outbuf[0] &= ~(1<<7);
 				outbuf[0] -= 32;
 				outbuf[1] &= ~(1<<7);
 				outbuf[1] -= 32;
 				strCode.Format(_T("%.2d%.2d"), outbuf[0], outbuf[1]);
+			} else {
+				strOutput += wch;
+				pos += wch > CHAR_MAX ? 2 : 1;
+				continue;
 			}
 		}
-		//编码字符串
-		else if (strTo == _T("WUBI"))
-		{
-			//汉字区位码和五笔字型码使用ASCII表示方式，如"3278"，"wb"
-			strCode = outbuf;
-		}
+		//其他编码使用ICONV进行转换，并将目标字符串长度赋值给outlen
 		else
 		{
-			for (int j = 0; j < outlen; j++)
-			{
-				//十六进制显示方式
-				if (m_rdHexCat.GetCheck())
+			char *p = outbuf;
+			if (!convert_to_charset(from_cs.c_str(), to_cs.c_str(), inbuf, inlen, &p, &outlen, 1)) {
+				if (!bWarned)
 				{
-					if (m_ckCapital.GetCheck())
-						strChar.Format(_T("%.2X"), (unsigned char)outbuf[j]);
-					else
-						strChar.Format(_T("%.2x"), (unsigned char)outbuf[j]);
+					if (errno == E2BIG)
+						AfxMessageBox(_T("目标缓冲区太小无法保存转换后的字符"));
+					else if (errno == EILSEQ)
+						AfxMessageBox(_T("待转换内容包含目标编码无法识别的字符"));
+					if (errno == EINVAL)
+						AfxMessageBox(_T("不完全的待转换内容序列"));
+					
+					bWarned = true;
 				}
-				//十进制显示方式
-				else if (m_rdOctCat.GetCheck())
+				strOutput += wch;
+				pos += wch > CHAR_MAX ? 2 : 1;
+			    continue;
+			} else {
+				for (int j = 0; j < outlen; j++)
 				{
-					if (!m_ckSigned.GetCheck())
-						strChar.Format(_T("%.2d"), (unsigned char)outbuf[j]);
-					else
-						strChar.Format(_T("%.2d"), outbuf[j]);
-				}
-				else
-				//二进制查看方式
-				{
-					strChar = _T("");
-					for (int i = 1; i <= 128; i<<=1)
+					//十六进制显示方式
+					if (m_rdHexCat.GetCheck())
 					{
-						if (outbuf[j] & i)
-							strChar.Insert(0, _T("1"));
+						if (m_ckCapital.GetCheck())
+							strChar.Format(_T("%.2X"), (unsigned char)outbuf[j]);
 						else
-							strChar.Insert(0, _T("0"));
+							strChar.Format(_T("%.2x"), (unsigned char)outbuf[j]);
 					}
+					//十进制显示方式
+					else if (m_rdOctCat.GetCheck())
+					{
+						if (!m_ckSigned.GetCheck())
+							strChar.Format(_T("%.2d"), (unsigned char)outbuf[j]);
+						else
+							strChar.Format(_T("%.2d"), outbuf[j]);
+					}
+					else
+						//二进制查看方式
+					{
+						strChar = _T("");
+						for (int i = 1; i <= 128; i<<=1)
+						{
+							if (outbuf[j] & i)
+								strChar.Insert(0, _T("1"));
+							else
+								strChar.Insert(0, _T("0"));
+						}
+					}
+					
+					strCode += strChar;
+					if (j != outlen - 1)
+						strCode += _T(" ");
 				}
-
-				strCode += strChar;
-				if (j != outlen - 1)
-					strCode += _T(" ");
 			}
 		}
 
@@ -277,7 +279,8 @@ void CDlgLookup::OnOK()
 		strOutput += _T(") ");
 
 		//此算此编码的高亮范围
-		scope.start = pos + (wch > CHAR_MAX ? 2 : 1) + 1 /* '(' */;
+		pos += wch > CHAR_MAX ? 2 : 1;
+		scope.start = pos + 1 /* '(' */;
 		scope.end = scope.start + strCode.GetLength();
 		scope_list.push_back(scope);
 
