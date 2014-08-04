@@ -1,0 +1,8 @@
+/Debug
+/Release
+*.ncb
+*.opt
+*.aps
+*.plg
+*.positions
+utils_config.h
