@@ -100,6 +100,35 @@ BOOL CDlgFileConv::OnInitDialog()
 	              // EXCEPTION: OCX Property Pages should return FALSE
 }
 
+bool CDlgFileConv::ConvertFileToCharset(
+	FILE* fps, FILE* fpd, 
+	const std::string& src_charset,
+	const std::string& dst_charset)
+{
+	char *src_text = NULL, *dst_text = NULL;
+	size_t src_len = 0, dst_len = 0;
+	int ret;
+	
+	if (!xfread(fps, -1, 0, &src_text, &src_len))
+		return false;
+
+	ret = convert_to_charset(
+		src_charset.c_str(), dst_charset.c_str(),
+		src_text, src_len, 
+		&dst_text, &dst_len, 0);
+	if (!ret) {
+		xfree(src_text);
+		return false;
+	}
+	
+	ret = fwrite(dst_text, dst_len, 1, fpd);
+
+	xfree(src_text);
+	xfree(dst_text);
+
+	return ret == 1;
+}
+
 //转换线程入口
 static thread_ret_t THREAD_CALLTYPE conv_thread_proc(void* arg)
 {
@@ -141,9 +170,14 @@ static int convert_line(char *line, size_t len, size_t nline, void *arg)
 //转换线程
 void CDlgFileConv::ConvThreadProc()
 {
-	int count = m_convFileInfo.src_files.size();
 	std::string srcf, dstf;
+	std::string charset;
+	FILE *fp, *fps;
+	char bom_charset[MAX_CHARSET];
+	int count;
+	bool success;
 
+	count = m_convFileInfo.src_files.size();
 	m_convFileInfo.total = count;
 
 	for (int i = 0; i < count; i++)
@@ -159,24 +193,19 @@ void CDlgFileConv::ConvThreadProc()
 		m_convFileInfo.src_files.pop_front();
 		m_convFileInfo.dst_files.pop_front();
 
+		fp = fps = NULL;
+
+		fps = xfopen(srcf.c_str(), "rb");
+		if (!fps)
+			goto finish;
+
 		create_directories(dstf.c_str());
 
-		FILE *fps = xfopen(srcf.c_str(), "rb");
-		if (!fps)
-		{
-			m_convFileInfo.failed ++;
-			continue;
-		}
-
-		FILE *fp = xfopen(dstf.c_str(), "wb");
+		fp = xfopen(dstf.c_str(), "wb");
 		if (!fp)
-		{
-			m_convFileInfo.failed ++;
-			continue;
-		}
+			goto finish;
 
 		//忽略源文件的BOM头
-		char bom_charset[MAX_CHARSET];
 		m_convFileInfo.src_bom_charset = "";
 		if (read_file_bom(fps, bom_charset, MAX_CHARSET)) {
 			//如果存在BOM头但是其所代表的字符集与用户选择的字符集不一致
@@ -186,26 +215,44 @@ void CDlgFileConv::ConvThreadProc()
 			}
 		}
 
+		charset = m_convFileInfo.src_charset;
+		if (!m_convFileInfo.src_bom_charset.empty())
+			charset = m_convFileInfo.src_bom_charset;
+
 		//写入目标文件的BOM头
 		if (m_bWriteBOM)
 			write_file_bom(fp, m_convFileInfo.dst_charset.c_str());
 
-		//转换文件的每一行
-		m_convFileInfo.fp = fp;
-		foreach_line(fps, convert_line, &m_convFileInfo);
+		// 如果原文件是UTF-16/32编码，foreach_line函数不能很好地处理换行
+		// 因此需要一次性转换
+		if (charset.find("UTF-16") != NPOS ||
+			charset.find("UTF-32") != NPOS) {
+			success = ConvertFileToCharset(fps, fp, 
+				charset.c_str(), m_convFileInfo.dst_charset);
+		} else {
+			// 逐行转换原文件
+			m_convFileInfo.fp = fp;
+			success = foreach_line(fps, convert_line, &m_convFileInfo) == 1;
+		}
 
-		std::string charset = m_convFileInfo.src_charset;
-		if (!m_convFileInfo.src_bom_charset.empty())
-			charset = m_convFileInfo.src_bom_charset;
-		log_dprintf(LOG_INFO, 
-			"Converting %s ... %s(%s) -> %s(%s)\n", 
-			srcf.c_str(), charset.c_str(), 
-			utils::FileSizeReadable(ftell(fps)).c_str(),
-			m_convFileInfo.dst_charset.c_str(),
-			utils::FileSizeReadable(ftell(fp)).c_str()); 
+finish:
+		if (success) {
+			log_dprintf(LOG_INFO, 
+				"Converting %s ... %s(%s) -> %s(%s)\n", 
+				srcf.c_str(), charset.c_str(), 
+				utils::FileSizeReadable(ftell(fps)).c_str(),
+				m_convFileInfo.dst_charset.c_str(),
+				utils::FileSizeReadable(ftell(fp)).c_str()); 
+		} else {
+			m_convFileInfo.failed ++;
+			log_dprintf(LOG_ERROR, "Failed to convert %s (%s)\n", 
+				srcf.c_str(), charset.c_str());
+		}
 
-		xfclose(fps);
-		xfclose(fp);
+		if (fps)
+			xfclose(fps);
+		if (fp)
+			xfclose(fp);
 
 		//总体转换进度
 		PostMessage(WM_USER_CONV_PROG, i+1, count);

@@ -38,6 +38,11 @@ public:
 protected:
 	void SwitchSrcType();
 
+	bool ConvertFileToCharset(
+		FILE* fps, FILE* fpd, 
+		const std::string& src_charset,
+		const std::string& dst_charset);
+
 // Dialog Data
 	//{{AFX_DATA(CDlgFileConv)
 	enum { IDD = IDD_DLG_FILECONV };
