@@ -11,6 +11,7 @@ typedef struct
 {
 	utils::string_list src_files;
 	std::string src_charset;
+	std::string src_bom_charset;
 	
 	utils::string_list dst_files;
 	std::string dst_charset;

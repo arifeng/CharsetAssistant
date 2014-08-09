@@ -169,7 +169,7 @@ void CDlgLookup::OnOK()
 		outlen = OUTBUF;
 
 		//»Ø³µ»»ÐÐ·û
-		if (inbuf[0] == '\r' || inbuf[0] == '\n')
+		if (wch == '\r' || wch == '\n')
 		{
 			strOutput += wch;
 			pos += 1;

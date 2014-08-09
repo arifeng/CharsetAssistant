@@ -113,14 +113,18 @@ static thread_ret_t THREAD_CALLTYPE conv_thread_proc(void* arg)
 static int convert_line(char *line, size_t len, size_t nline, void *arg)
 {
 	ConvFileInfo *pInfo = (ConvFileInfo*)arg;
-
+	std::string charset;
 	char buf[1024], *outbuf = buf;
 	size_t outlen = 1024;
 	int ret;
 
+	charset = pInfo->src_charset;
+	if (!pInfo->src_bom_charset.empty())
+		charset = pInfo->src_bom_charset;
+
 	//文件内容转换使用兼容模式
 	//TODO:在界面上选择是否使用兼容模式
-	ret = convert_to_charset(pInfo->src_charset.c_str(), pInfo->dst_charset.c_str(),
+	ret = convert_to_charset(charset.c_str(), pInfo->dst_charset.c_str(),
 						line, len, &outbuf, &outlen, 0);
 
 	if (ret)
@@ -173,11 +177,12 @@ void CDlgFileConv::ConvThreadProc()
 
 		//忽略源文件的BOM头
 		char bom_charset[MAX_CHARSET];
+		m_convFileInfo.src_bom_charset = "";
 		if (read_file_bom(fps, bom_charset, MAX_CHARSET)) {
 			//如果存在BOM头但是其所代表的字符集与用户选择的字符集不一致
 			if (strcasecmp(bom_charset, m_convFileInfo.src_charset.c_str())) {
 				//TODO:提醒用户
-				m_convFileInfo.src_charset = bom_charset;
+				m_convFileInfo.src_bom_charset = bom_charset;
 			}
 		}
 
@@ -189,12 +194,24 @@ void CDlgFileConv::ConvThreadProc()
 		m_convFileInfo.fp = fp;
 		foreach_line(fps, convert_line, &m_convFileInfo);
 
-		fclose(fps);
-		fclose(fp);
-		
+		std::string charset = m_convFileInfo.src_charset;
+		if (!m_convFileInfo.src_bom_charset.empty())
+			charset = m_convFileInfo.src_bom_charset;
+		log_dprintf(LOG_INFO, 
+			"Converting %s ... %s(%s) -> %s(%s)\n", 
+			srcf.c_str(), charset.c_str(), 
+			utils::FileSizeReadable(ftell(fps)).c_str(),
+			m_convFileInfo.dst_charset.c_str(),
+			utils::FileSizeReadable(ftell(fp)).c_str()); 
+
+		xfclose(fps);
+		xfclose(fp);
+
 		//总体转换进度
 		PostMessage(WM_USER_CONV_PROG, i+1, count);
 	}
+
+	log_flush(DEBUG_LOG);
 
 	//发送转换完成消息
 	PostMessage(WM_USER_CONV_DONE);
