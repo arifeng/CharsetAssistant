@@ -130,12 +130,12 @@ bool CDlgFileConv::ConvertFileToCharset(
 }
 
 //转换线程入口
-static thread_ret_t THREAD_CALLTYPE conv_thread_proc(void* arg)
+static uthread_ret_t THREAD_CALLTYPE conv_thread_proc(void* arg)
 {
 	CDlgFileConv *pThis = (CDlgFileConv*)arg;
 	pThis->ConvThreadProc();
 
-	return (thread_ret_t)1;
+	return (uthread_ret_t)1;
 }
 
 //转换文件的一行
@@ -412,7 +412,7 @@ void CDlgFileConv::OnOK()
 
 	//开启转换线程
 	m_bConverting = TRUE;
-	thread_create1(&m_thread, conv_thread_proc, this, 0);
+	uthread_create(&m_thread, conv_thread_proc, this, 0);
 
 	m_bTerminate = FALSE;
 	SetDlgItemText(IDOK, _T("停止转换"));

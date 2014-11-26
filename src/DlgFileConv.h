@@ -60,7 +60,7 @@ protected:
 	//}}AFX_DATA
 
 	ConvFileInfo m_convFileInfo;
-	thread_t	m_thread;
+	uthread_t	m_thread;
 
 	BOOL	m_bConverting;
 	BOOL	m_bTerminate;
